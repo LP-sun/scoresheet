@@ -1,3 +1,7 @@
+"""scoresheet package."""
+
+__all__ = ["__version__"]
+
 """Utilities for arranging MIDI score sheets."""
 
 __all__ = ["__version__"]

@@ -1,3 +1,4 @@
+"""Instrumentation presets for score arrangement."""
 """Target ensemble definitions and General MIDI instrumentation.
 
 MIDI programs below are zero-based General MIDI program numbers, matching the
@@ -7,6 +8,24 @@ convention used by :mod:`music21`'s ``Instrument.midiProgram`` field.
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class InstrumentPreset:
+    """A simple instrument preset used by arrangers."""
+
+    name: str
+    music21_instrument: str
+
+
+DEFAULT_ORCHESTRA_PRESET: tuple[InstrumentPreset, ...] = (
+    InstrumentPreset("Flute", "Flute"),
+    InstrumentPreset("Oboe", "Oboe"),
+    InstrumentPreset("Clarinet", "Clarinet"),
+    InstrumentPreset("Violin", "Violin"),
+    InstrumentPreset("Viola", "Viola"),
+    InstrumentPreset("Cello", "Cello"),
+)
 from typing import Mapping
 
 
