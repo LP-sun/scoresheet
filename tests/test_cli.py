@@ -95,6 +95,11 @@ def test_cli_mid_branch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     assert exit_code == 0
     assert [name for name, _ in calls] == ["parse", "orchestrate", "mid"]
 
+    def fake_export_musicxml(result: OrchestrationResult, path: Path, title: str) -> Path:
+        calls.append(("musicxml", path))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("musicxml", encoding="utf-8")
+        return path
 
 def test_cli_both_and_parts_branches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     input_path = tmp_path / "song.mid"
