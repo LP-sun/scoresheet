@@ -1,2 +1,2 @@
 # scoresheet
-give out midi or musicxml file by .wav file
+give out orchestra version all score sheet or musicxml file by .mid file means piano sheet
