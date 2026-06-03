@@ -121,6 +121,7 @@ def run(args: argparse.Namespace) -> int:
         config = OrchestrationConfig(
             target_ensemble=args.ensemble,
             quantization_unit=args.quantization_unit,
+            concert_key=args.concert_key,
             output_musicxml=args.backend in {"native", "both"} and args.format in {"musicxml", "both"},
             output_midi=args.format in {"mid", "both", "mscz"} or args.backend in {"musescore", "both"},
             output_parts=args.parts,
@@ -137,7 +138,13 @@ def run(args: argparse.Namespace) -> int:
         xml_path: Path | None = None
         if args.format in {"musicxml", "both"}:
             xml_path = args.output_dir / f"{stem}_{args.ensemble}.musicxml"
-            export_musicxml(arranged, xml_path, title=title, pitch_mode=args.pitch_mode)
+            export_musicxml(
+                arranged,
+                xml_path,
+                title=title,
+                pitch_mode=args.pitch_mode,
+                concert_key=args.concert_key,
+            )
             print(xml_path)
 
             if args.validate_musescore:
@@ -159,7 +166,13 @@ def run(args: argparse.Namespace) -> int:
             print(midi_path)
         if args.parts:
             parts_dir = args.output_dir / "parts"
-            for path in export_parts_musicxml(arranged, parts_dir, title_prefix=stem, pitch_mode=args.pitch_mode):
+            for path in export_parts_musicxml(
+                arranged,
+                parts_dir,
+                title_prefix=stem,
+                pitch_mode=args.pitch_mode,
+                concert_key=args.concert_key,
+            ):
                 print(path)
         return 0
 
@@ -195,7 +208,13 @@ def run(args: argparse.Namespace) -> int:
 
     # args.backend == "both"
     native_xml_path = args.output_dir / f"{stem}_{args.ensemble}.native.musicxml"
-    export_musicxml(arranged, native_xml_path, title=title, pitch_mode=args.pitch_mode)
+    export_musicxml(
+        arranged,
+        native_xml_path,
+        title=title,
+        pitch_mode=args.pitch_mode,
+        concert_key=args.concert_key,
+    )
     print(native_xml_path)
 
     musescore_targets = [
