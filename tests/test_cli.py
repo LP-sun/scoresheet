@@ -38,7 +38,7 @@ def _patch_pipeline(monkeypatch: pytest.MonkeyPatch, calls: list[tuple[str, obje
         calls.append(("orchestrate", config))
         return _fake_result(config)
 
-    def fake_export_musicxml(result: OrchestrationResult, path: Path, title: str) -> Path:
+    def fake_export_musicxml(result: OrchestrationResult, path: Path, title: str, pitch_mode: str = "written") -> Path:
         calls.append(("musicxml", path))
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("musicxml", encoding="utf-8")
@@ -50,7 +50,7 @@ def _patch_pipeline(monkeypatch: pytest.MonkeyPatch, calls: list[tuple[str, obje
         path.write_bytes(b"MThd")
         return path
 
-    def fake_export_parts(result: OrchestrationResult, path: Path, title_prefix: str) -> list[Path]:
+    def fake_export_parts(result: OrchestrationResult, path: Path, title_prefix: str, pitch_mode: str = "written") -> list[Path]:
         calls.append(("parts", path))
         path.mkdir(parents=True, exist_ok=True)
         part_path = path / "flute.musicxml"
@@ -82,6 +82,29 @@ def test_cli_musicxml_branch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 
     assert exit_code == 0
     assert [name for name, _ in calls] == ["parse", "orchestrate", "musicxml"]
+    assert calls[1][1].output_musicxml is True
+    assert calls[1][1].output_midi is False
+
+
+def test_cli_default_pitch_mode_is_written(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
+    captured: dict[str, str] = {}
+
+    def fake_export_musicxml(result: OrchestrationResult, path: Path, title: str, pitch_mode: str = "written") -> Path:
+        captured["pitch_mode"] = pitch_mode
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("musicxml", encoding="utf-8")
+        return path
+
+    monkeypatch.setattr(cli, "parse_midi", lambda path: _fake_parsed(path))
+    monkeypatch.setattr(cli, "orchestrate", lambda parsed, config: _fake_result(config))
+    monkeypatch.setattr(cli, "export_musicxml", fake_export_musicxml)
+
+    exit_code = cli.main([str(input_path), "-o", str(tmp_path / "out"), "--format", "musicxml"])
+
+    assert exit_code == 0
+    assert captured["pitch_mode"] == "written"
 
 
 def test_cli_mid_branch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -105,6 +128,27 @@ def test_cli_both_and_parts_branches(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     assert exit_code == 0
     assert [name for name, _ in calls] == ["parse", "orchestrate", "musicxml", "mid", "parts"]
+
+
+def test_cli_pitch_mode_flags_are_forwarded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
+    captured: list[str] = []
+
+    def fake_export_musicxml(result: OrchestrationResult, path: Path, title: str, pitch_mode: str = "written") -> Path:
+        captured.append(pitch_mode)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("musicxml", encoding="utf-8")
+        return path
+
+    monkeypatch.setattr(cli, "parse_midi", lambda path: _fake_parsed(path))
+    monkeypatch.setattr(cli, "orchestrate", lambda parsed, config: _fake_result(config))
+    monkeypatch.setattr(cli, "export_musicxml", fake_export_musicxml)
+
+    exit_code = cli.main([str(input_path), "-o", str(tmp_path / "out"), "--format", "musicxml", "--pitch-mode", "concert"])
+
+    assert exit_code == 0
+    assert captured == ["concert"]
 
 
 def test_cli_warns_but_continues_for_non_midi_extension(
