@@ -45,6 +45,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="written",
         help="MusicXML pitch handling mode",
     )
+    parser.add_argument(
+        "--concert-key",
+        default=None,
+        help='Concert key for MusicXML output, e.g. "C major", "G major", or "A minor"',
+    )
     parser.add_argument("--parts", action="store_true", help="Also write individual MusicXML part files")
     parser.add_argument(
         "--validate-musescore",
@@ -208,7 +213,13 @@ def run(args: argparse.Namespace) -> int:
 
     if args.parts:
         parts_dir = args.output_dir / "parts"
-        for path in export_parts_musicxml(arranged, parts_dir, title_prefix=stem, pitch_mode=args.pitch_mode):
+        for path in export_parts_musicxml(
+            arranged,
+            parts_dir,
+            title_prefix=stem,
+            pitch_mode=args.pitch_mode,
+            concert_key=args.concert_key,
+        ):
             print(path)
 
     return 0
