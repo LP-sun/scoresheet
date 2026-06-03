@@ -19,8 +19,8 @@ The MVP can:
 - arrange pitched, non-drum notes for one supported ensemble preset;
 - quantize note starts and durations to a configurable beat grid;
 - octave-shift pitches into instrument sounding ranges when possible;
-- export MusicXML full scores;
-- export MIDI realizations;
+- export MusicXML full scores as the primary output;
+- export MIDI realizations as a listening aid;
 - export individual MusicXML parts when requested.
 
 ## What it cannot do yet
@@ -53,6 +53,8 @@ Arrange one MIDI file to MusicXML:
 scoresheet INPUT.mid -o output --ensemble small_orchestra --format musicxml
 ```
 
+For MuseScore, the default `--pitch-mode written` keeps transposing instruments in written pitch and emits the MusicXML transpose metadata MuseScore expects.
+
 Arrange one MIDI file to both MusicXML and MIDI, also writing individual parts:
 
 ```bash
@@ -71,6 +73,7 @@ scoresheet --help
 - `-o, --output-dir`: directory for generated files. Defaults to `output`.
 - `--ensemble`: one supported ensemble preset. Defaults to `small_orchestra`.
 - `--format`: `musicxml`, `mid`, or `both`. Defaults to `musicxml`.
+- `--pitch-mode`: `written` or `concert`. Defaults to `written`.
 - `--parts`: also export one MusicXML file per instrument part.
 - `--quantization-unit`: beat grid unit. Defaults to `0.25`.
 
@@ -91,6 +94,8 @@ scoresheet --help
 4. Clean up notation details such as ties, beams, articulations, dynamics, and page layout.
 5. Edit orchestration choices manually where the heuristic assignment is not musical enough.
 6. Export final parts or audio from MuseScore.
+
+If you want concert-pitch debugging output instead of transposing-instrument notation, use `--pitch-mode concert`.
 
 ## Development / tests
 

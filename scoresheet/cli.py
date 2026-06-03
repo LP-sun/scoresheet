@@ -31,6 +31,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="musicxml",
         help="Output format for the full score",
     )
+    parser.add_argument(
+        "--pitch-mode",
+        choices=("written", "concert"),
+        default="written",
+        help="MusicXML pitch handling mode",
+    )
     parser.add_argument("--parts", action="store_true", help="Also write individual MusicXML part files")
     parser.add_argument("--quantization-unit", type=float, default=0.25, help="Beat grid unit, e.g. 0.25 = sixteenth note")
     return parser
@@ -63,7 +69,7 @@ def run(args: argparse.Namespace) -> int:
     stem = input_path.stem
     if args.format in {"musicxml", "both"}:
         xml_path = args.output_dir / f"{stem}_{args.ensemble}.musicxml"
-        export_musicxml(arranged, xml_path, title=f"{stem} - {args.ensemble}")
+        export_musicxml(arranged, xml_path, title=f"{stem} - {args.ensemble}", pitch_mode=args.pitch_mode)
         print(xml_path)
     if args.format in {"mid", "both"}:
         midi_path = args.output_dir / f"{stem}_{args.ensemble}.mid"
@@ -71,7 +77,7 @@ def run(args: argparse.Namespace) -> int:
         print(midi_path)
     if args.parts:
         parts_dir = args.output_dir / "parts"
-        for path in export_parts_musicxml(arranged, parts_dir, title_prefix=stem):
+        for path in export_parts_musicxml(arranged, parts_dir, title_prefix=stem, pitch_mode=args.pitch_mode):
             print(path)
 
     return 0

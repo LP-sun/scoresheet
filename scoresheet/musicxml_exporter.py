@@ -2,17 +2,27 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
+from typing import Literal
 
 from music21 import clef, duration, instrument, key, metadata, midi, note, stream, tempo, meter
 
-from .orchestrator import OrchestratedNote, OrchestrationResult
+from .orchestrator import InstrumentSpec, OrchestratedNote, OrchestrationResult
 
 
-def build_score(result: OrchestrationResult, title: str = "Orchestrated score") -> stream.Score:
+PitchMode = Literal["written", "concert"]
+
+
+def build_score(
+    result: OrchestrationResult,
+    title: str = "Orchestrated score",
+    pitch_mode: PitchMode = "written",
+) -> stream.Score:
     """Build a music21 Score from an orchestration result."""
 
     score = stream.Score()
+    score.atSoundingPitch = True
     score.metadata = metadata.Metadata()
     score.metadata.title = title
     score.insert(0, tempo.MetronomeMark(number=result.tempo_bpm))
@@ -22,26 +32,42 @@ def build_score(result: OrchestrationResult, title: str = "Orchestrated score") 
         if maybe_key is not None:
             score.insert(0, maybe_key)
 
+    bar_length = result.time_signature[0] * 4.0 / result.time_signature[1]
+    max_end = max(
+        (note.start_beat + note.duration_beats for notes in result.notes_by_instrument.values() for note in notes),
+        default=0.0,
+    )
+    total_length = math.ceil(max_end / bar_length) * bar_length if max_end > 0 else bar_length
+
     for spec in result.instruments:
         part = stream.Part(id=_safe_part_id(spec.name))
         part.partName = spec.name
-        part.insert(0, _music21_instrument(spec.name, spec.midi_program))
+        part.atSoundingPitch = True
+        part.insert(0, _music21_instrument(spec, pitch_mode))
         part.insert(0, _clef(spec.clef))
         part.insert(0, meter.TimeSignature(f"{result.time_signature[0]}/{result.time_signature[1]}"))
         for orch_note in result.notes_by_instrument.get(spec.name, []):
             part.insert(orch_note.start_beat, _note_from_orchestrated(orch_note))
+        _prepare_part_notation(part, total_length)
+        if pitch_mode == "written":
+            part = part.toWrittenPitch(inPlace=False)
         part.makeMeasures(inPlace=True)
         score.insert(0, part)
 
     return score
 
 
-def export_musicxml(result: OrchestrationResult, output_path: str | Path, title: str = "Orchestrated score") -> Path:
+def export_musicxml(
+    result: OrchestrationResult,
+    output_path: str | Path,
+    title: str = "Orchestrated score",
+    pitch_mode: PitchMode = "written",
+) -> Path:
     """Write a full score MusicXML file and return its path."""
 
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    score = build_score(result, title=title)
+    score = build_score(result, title=title, pitch_mode=pitch_mode)
     written = score.write("musicxml", fp=str(output))
     return Path(written)
 
@@ -59,12 +85,17 @@ def export_midi(result: OrchestrationResult, output_path: str | Path, title: str
     return output
 
 
-def export_parts_musicxml(result: OrchestrationResult, output_dir: str | Path, title_prefix: str = "Part") -> list[Path]:
+def export_parts_musicxml(
+    result: OrchestrationResult,
+    output_dir: str | Path,
+    title_prefix: str = "Part",
+    pitch_mode: PitchMode = "written",
+) -> list[Path]:
     """Write one MusicXML file per instrument part."""
 
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    score = build_score(result, title="Orchestrated parts")
+    score = build_score(result, title="Orchestrated parts", pitch_mode=pitch_mode)
     written: list[Path] = []
     for part in score.parts:
         part_score = stream.Score()
@@ -84,11 +115,27 @@ def _note_from_orchestrated(orch_note: OrchestratedNote) -> note.Note:
     return n
 
 
-def _music21_instrument(name: str, midi_program: int) -> instrument.Instrument:
-    inst = instrument.fromString(name)
-    inst.instrumentName = name
-    inst.partName = name
-    inst.midiProgram = midi_program
+def _prepare_part_notation(part: stream.Part, total_length: float) -> None:
+    part.makeRests(fillGaps=True, refStreamOrTimeRange=[0, total_length], inPlace=True)
+    part.makeMeasures(inPlace=True)
+    part.makeTies(inPlace=True)
+    for measure in part.getElementsByClass(stream.Measure):
+        measure.makeRests(fillGaps=True, timeRangeFromBarDuration=True, inPlace=True)
+
+
+def _music21_instrument(spec: InstrumentSpec, pitch_mode: PitchMode) -> instrument.Instrument:
+    if pitch_mode == "concert":
+        inst = instrument.Instrument()
+        inst.instrumentName = spec.name
+        inst.partName = spec.name
+        inst.midiProgram = spec.midi_program
+        inst.transposition = None
+        return inst
+
+    inst = instrument.fromString(spec.name)
+    inst.instrumentName = spec.name
+    inst.partName = spec.name
+    inst.midiProgram = spec.midi_program
     return inst
 
 
