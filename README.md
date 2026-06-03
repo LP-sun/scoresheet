@@ -76,6 +76,25 @@ scoresheet --help
 - `--pitch-mode`: `written` or `concert`. Defaults to `written`.
 - `--parts`: also export one MusicXML file per instrument part.
 - `--quantization-unit`: beat grid unit. Defaults to `0.25`.
+- `--validate-musescore`: optionally validate generated MusicXML with MuseScore Studio CLI converter mode.
+- `--musescore-executable`: optional MuseScore executable path or command name for `--validate-musescore`.
+
+
+## Optional MuseScore validation
+
+MusicXML is the primary output target for `scoresheet`; MIDI output is a secondary listening aid. If MuseScore Studio is installed locally and its executable is available on `PATH`, you can run an optional smoke validation after MusicXML export:
+
+```bash
+scoresheet INPUT.mid -o output --ensemble small_orchestra --format musicxml --validate-musescore
+```
+
+On Windows, if MuseScore is not on `PATH`, pass the executable explicitly:
+
+```bash
+scoresheet INPUT.mid -o output --format musicxml --validate-musescore --musescore-executable "C:/Program Files/MuseScore 4/bin/MuseScore4.exe"
+```
+
+The validator calls MuseScore Studio CLI converter mode to import the generated MusicXML and export a `.validated.mscz` file next to it. This is intended to catch MuseScore import problems such as `incomplete measure` / `不完整小节` before a user opens the score for editing. CI does not install MuseScore by default, so MuseScore-specific integration coverage is optional and skips when no executable is found.
 
 ## Supported ensembles
 

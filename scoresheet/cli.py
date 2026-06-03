@@ -9,6 +9,7 @@ import warnings
 
 from .midi_parser import parse_midi
 from .musicxml_exporter import export_midi, export_musicxml, export_parts_musicxml
+from .musescore_validator import validate_with_musescore
 from .orchestrator import ENSEMBLES, OrchestrationConfig, orchestrate
 
 
@@ -38,6 +39,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="MusicXML pitch handling mode",
     )
     parser.add_argument("--parts", action="store_true", help="Also write individual MusicXML part files")
+    parser.add_argument(
+        "--validate-musescore",
+        action="store_true",
+        help="Optionally validate generated MusicXML with MuseScore Studio CLI converter mode",
+    )
+    parser.add_argument(
+        "--musescore-executable",
+        type=Path,
+        default=None,
+        help="Path or command name for the MuseScore executable used by --validate-musescore",
+    )
     parser.add_argument("--quantization-unit", type=float, default=0.25, help="Beat grid unit, e.g. 0.25 = sixteenth note")
     return parser
 
@@ -67,10 +79,25 @@ def run(args: argparse.Namespace) -> int:
         print(f"warning: {warning.message}", file=sys.stderr)
 
     stem = input_path.stem
+    xml_path: Path | None = None
     if args.format in {"musicxml", "both"}:
         xml_path = args.output_dir / f"{stem}_{args.ensemble}.musicxml"
         export_musicxml(arranged, xml_path, title=f"{stem} - {args.ensemble}", pitch_mode=args.pitch_mode)
         print(xml_path)
+
+        if args.validate_musescore:
+            result = validate_with_musescore(xml_path, executable=args.musescore_executable)
+            if result.skipped:
+                print(f"warning: MuseScore validation skipped: {result.reason}", file=sys.stderr)
+            elif not result.ok:
+                print(f"error: MuseScore validation failed: {result.reason}", file=sys.stderr)
+                if result.stdout:
+                    print(f"MuseScore stdout:\n{result.stdout.strip()}", file=sys.stderr)
+                if result.stderr:
+                    print(f"MuseScore stderr:\n{result.stderr.strip()}", file=sys.stderr)
+                return 1
+            elif result.output_path is not None:
+                print(f"MuseScore validated: {result.output_path}")
     if args.format in {"mid", "both"}:
         midi_path = args.output_dir / f"{stem}_{args.ensemble}.mid"
         export_midi(arranged, midi_path, title=f"{stem} - {args.ensemble}")
