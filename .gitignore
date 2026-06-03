@@ -7,3 +7,6 @@ __pycache__/
 # Generated arrangement outputs
 output/
 arranged/
+__pycache__/
+*.py[cod]
+.pytest_cache/
