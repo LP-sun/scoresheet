@@ -1,3 +1,16 @@
+[project]
+name = "scoresheet"
+version = "0.1.0"
+description = "MIDI reduction orchestration rules based on music21"
+requires-python = ">=3.11"
+dependencies = ["music21>=9.0"]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 requires = ["setuptools>=68"]
