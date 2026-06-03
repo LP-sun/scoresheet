@@ -1,3 +1,7 @@
+"""Utilities for arranging MIDI score sheets."""
+
+__all__ = ["__version__"]
+__version__ = "0.1.0"
 """scoresheet: arrange piano MIDI files into ensemble scores."""
 
 from .arranger import arrange_file, analyze_midi, arrange_analysis

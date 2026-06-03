@@ -1,3 +1,8 @@
+"""Module entry point for ``python -m scoresheet``."""
+
+from .cli import main
+
+if __name__ == "__main__":
 """Command-line interface for scoresheet."""
 
 from __future__ import annotations
