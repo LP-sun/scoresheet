@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scoresheet"
+version = "0.1.0"
+description = "Convert MIDI piano sheets into arranged score files such as MIDI or MusicXML."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "music21",
+    "pretty_midi",
+    "mido",
+    "numpy",
+]
+
+[project.optional-dependencies]
+partitura = ["partitura"]
+
+[project.scripts]
+scoresheet = "scoresheet.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
