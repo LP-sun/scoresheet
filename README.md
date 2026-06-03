@@ -120,6 +120,14 @@ When `--pitch-mode written` is used, transposing instruments are exported with w
 If you want concert-pitch debugging output instead of transposing-instrument notation, use `--pitch-mode concert`.
 If the MIDI file has no key signature, scoresheet defaults to `C major`; pass `--concert-key "G major"` or another key to override.
 
+### Rhythm quantization limitations
+
+- MIDI is a performance format, so it does not always contain reliable notation-level rhythm information.
+- `scoresheet` snaps note starts and ends to the beat grid and normalizes measures for export.
+- The default `--quantization-unit` is `0.25`.
+- For swing, rubato, complex tuplets, changing meters, or changing tempi, you may still need to clean up the score in MuseScore.
+- If the rhythm looks uneven, try `--quantization-unit 0.5` or a smaller/larger value depending on the MIDI source.
+
 ## Development / tests
 
 Useful local checks:

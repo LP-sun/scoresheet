@@ -7,9 +7,9 @@ import math
 from pathlib import Path
 from typing import Literal
 
-from music21 import clef, duration, instrument, key, metadata, midi, note, pitch, stream, tempo, meter
+from music21 import clef, duration, instrument, key, metadata, midi, note, stream, tempo, meter
 
-from .orchestrator import InstrumentSpec, OrchestratedNote, OrchestrationResult
+from .orchestrator import InstrumentSpec, OrchestratedNote, OrchestrationResult, bar_length_from_time_signature
 
 
 PitchMode = Literal["written", "concert"]
@@ -34,7 +34,7 @@ def build_score(
     if concert_key_obj is not None:
         score.insert(0, copy.deepcopy(concert_key_obj))
 
-    bar_length = result.time_signature[0] * 4.0 / result.time_signature[1]
+    bar_length = bar_length_from_time_signature(result.time_signature)
     max_end = max(
         (n.start_beat + n.duration_beats for notes in result.notes_by_instrument.values() for n in notes),
         default=0.0,
@@ -52,9 +52,9 @@ def build_score(
             part.insert(0, copy.deepcopy(concert_key_obj))
         for orch_note in result.notes_by_instrument.get(spec.name, []):
             part.insert(orch_note.start_beat, _note_from_orchestrated(orch_note))
-        _prepare_part_notation(part, total_length)
         if pitch_mode == "written":
             part = part.toWrittenPitch(inPlace=False)
+        _prepare_part_notation(part, total_length)
         score.insert(0, part)
 
     return score
