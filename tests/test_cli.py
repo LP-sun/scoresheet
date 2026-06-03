@@ -158,3 +158,20 @@ def test_cli_unknown_ensemble_is_rejected_by_argparse(tmp_path: Path) -> None:
         cli.main([str(input_path), "--ensemble", "not_real"])
 
     assert excinfo.value.code == 2
+
+    exit_code = cli.main([str(input_path), "-o", str(tmp_path / "out"), "--format", "mid"])
+
+    assert exit_code == 0
+    assert [name for name, _ in calls] == ["parse", "orchestrate", "mid"]
+
+
+def test_cli_both_and_parts_branches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
+    calls: list[tuple[str, object]] = []
+    _patch_pipeline(monkeypatch, calls)
+
+    exit_code = cli.main([str(input_path), "-o", str(tmp_path / "out"), "--format", "both", "--parts"])
+
+    assert exit_code == 0
+    assert [name for name, _ in calls] == ["parse", "orchestrate", "musicxml", "mid", "parts"]
