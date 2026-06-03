@@ -208,3 +208,131 @@ def test_cli_unknown_ensemble_is_rejected_by_argparse(
         cli.main([str(input_path), "--ensemble", "not_real"])
 
     assert excinfo.value.code == 2
+
+
+def test_cli_does_not_validate_musescore_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
+    calls: list[tuple[str, object]] = []
+    _patch_pipeline(monkeypatch, calls)
+
+    def fail_validate(*args: object, **kwargs: object) -> object:
+        pytest.fail("MuseScore validation should not run unless --validate-musescore is set")
+
+    monkeypatch.setattr(cli, "validate_with_musescore", fail_validate)
+
+    exit_code = cli.main([str(input_path), "-o", str(tmp_path / "out"), "--format", "musicxml"])
+
+    assert exit_code == 0
+    assert [name for name, _ in calls] == ["parse", "orchestrate", "musicxml"]
+
+
+def test_cli_validate_musescore_skipped_warns_without_failing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from scoresheet.musescore_validator import MuseScoreValidationResult
+
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
+    calls: list[tuple[str, object]] = []
+    _patch_pipeline(monkeypatch, calls)
+
+    def fake_validate(path: Path, executable: Path | None = None) -> MuseScoreValidationResult:
+        calls.append(("validate", path))
+        return MuseScoreValidationResult(
+            executable=None,
+            input_score=path,
+            output_path=path.with_name(f"{path.stem}.validated.mscz"),
+            returncode=None,
+            stdout="",
+            stderr="",
+            ok=False,
+            skipped=True,
+            reason="MuseScore executable not found",
+        )
+
+    monkeypatch.setattr(cli, "validate_with_musescore", fake_validate)
+
+    exit_code = cli.main([str(input_path), "-o", str(tmp_path / "out"), "--format", "musicxml", "--validate-musescore"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "warning: MuseScore validation skipped: MuseScore executable not found" in captured.err
+    assert [name for name, _ in calls] == ["parse", "orchestrate", "musicxml", "validate"]
+
+
+def test_cli_validate_musescore_failure_returns_1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from scoresheet.musescore_validator import MuseScoreValidationResult
+
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
+    calls: list[tuple[str, object]] = []
+    _patch_pipeline(monkeypatch, calls)
+
+    def fake_validate(path: Path, executable: Path | None = None) -> MuseScoreValidationResult:
+        return MuseScoreValidationResult(
+            executable=Path("mscore"),
+            input_score=path,
+            output_path=path.with_name(f"{path.stem}.validated.mscz"),
+            returncode=1,
+            stdout="started import",
+            stderr="incomplete measure",
+            ok=False,
+            skipped=False,
+            reason="MuseScore exited with return code 1",
+        )
+
+    monkeypatch.setattr(cli, "validate_with_musescore", fake_validate)
+
+    exit_code = cli.main([str(input_path), "-o", str(tmp_path / "out"), "--format", "musicxml", "--validate-musescore"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "error: MuseScore validation failed: MuseScore exited with return code 1" in captured.err
+    assert "MuseScore stdout:" in captured.err
+    assert "MuseScore stderr:" in captured.err
+
+
+def test_cli_musescore_executable_argument_is_forwarded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from scoresheet.musescore_validator import MuseScoreValidationResult
+
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
+    calls: list[tuple[str, object]] = []
+    _patch_pipeline(monkeypatch, calls)
+    executable = tmp_path / "MuseScore 4" / "bin" / "MuseScore4.exe"
+    captured: dict[str, Path | None] = {}
+
+    def fake_validate(path: Path, executable: Path | None = None) -> MuseScoreValidationResult:
+        captured["executable"] = executable
+        return MuseScoreValidationResult(
+            executable=executable,
+            input_score=path,
+            output_path=path.with_name(f"{path.stem}.validated.mscz"),
+            returncode=0,
+            stdout="",
+            stderr="",
+            ok=True,
+            skipped=False,
+            reason=None,
+        )
+
+    monkeypatch.setattr(cli, "validate_with_musescore", fake_validate)
+
+    exit_code = cli.main(
+        [
+            str(input_path),
+            "-o",
+            str(tmp_path / "out"),
+            "--format",
+            "musicxml",
+            "--validate-musescore",
+            "--musescore-executable",
+            str(executable),
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["executable"] == executable
