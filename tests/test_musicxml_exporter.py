@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 import pytest
 from music21 import converter, stream
@@ -46,11 +47,57 @@ def _result_9_8(*, pitch_mode: str = "written") -> OrchestrationResult:
         tempo_bpm=120.0,
         time_signature=(9, 8),
         key_signature="C",
+        concert_key="C major",
     )
 
 
 def _load_musicxml(path: Path) -> stream.Score:
     return converter.parse(str(path))
+
+
+def _musicxml_root(path: Path) -> ET.Element:
+    return ET.parse(path).getroot()
+
+
+def _part_map(root: ET.Element) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for score_part in root.findall("./part-list/score-part"):
+        part_id = score_part.attrib["id"]
+        part_name = score_part.findtext("./part-name") or part_id
+        mapping[part_name] = part_id
+    return mapping
+
+
+def _first_part_measure(root: ET.Element, part_name: str) -> ET.Element:
+    mapping = _part_map(root)
+    part_id = mapping[part_name]
+    return root.find(f"./part[@id='{part_id}']/measure")  # type: ignore[return-value]
+
+
+def _first_note_pitch(measure: ET.Element) -> str:
+    note_el = measure.find("./note[pitch]")
+    assert note_el is not None
+    step = note_el.findtext("./pitch/step")
+    alter = note_el.findtext("./pitch/alter")
+    octave = note_el.findtext("./pitch/octave")
+    assert step is not None and octave is not None
+    accidental = ""
+    if alter == "1":
+        accidental = "#"
+    elif alter == "-1":
+        accidental = "-"
+    return f"{step}{accidental}{octave}"
+
+
+def _first_key_fifths(measure: ET.Element) -> int:
+    fifths = measure.findtext("./attributes/key/fifths")
+    assert fifths is not None
+    return int(fifths)
+
+
+def _first_transpose_chromatic(measure: ET.Element) -> int | None:
+    chromatic = measure.findtext("./attributes/transpose/chromatic")
+    return int(chromatic) if chromatic is not None else None
 
 
 def test_build_score_returns_music21_score(orchestration_result) -> None:
@@ -112,6 +159,7 @@ def test_sparse_part_writes_full_rest_measures(tmp_path: Path) -> None:
         tempo_bpm=120.0,
         time_signature=(4, 4),
         key_signature=None,
+        concert_key="C major",
     )
     output = export_musicxml(result, tmp_path / "sparse.musicxml", title="Sparse")
     score = _load_musicxml(output)
@@ -130,6 +178,7 @@ def test_long_note_is_split_into_ties(tmp_path: Path) -> None:
         tempo_bpm=120.0,
         time_signature=(4, 4),
         key_signature=None,
+        concert_key="C major",
     )
     output = export_musicxml(result, tmp_path / "ties.musicxml", title="Ties")
     score = _load_musicxml(output)
@@ -151,6 +200,7 @@ def test_written_mode_emits_transpose_for_transposing_instrument(tmp_path: Path)
         tempo_bpm=120.0,
         time_signature=(4, 4),
         key_signature=None,
+        concert_key="C major",
     )
     output = export_musicxml(result, tmp_path / "written.musicxml", title="Written", pitch_mode="written")
     text = output.read_text(encoding="utf-8")
@@ -170,6 +220,7 @@ def test_concert_mode_omits_transpose_and_keeps_pitch(tmp_path: Path) -> None:
         tempo_bpm=120.0,
         time_signature=(4, 4),
         key_signature=None,
+        concert_key="C major",
     )
     output = export_musicxml(result, tmp_path / "concert.musicxml", title="Concert", pitch_mode="concert")
     text = output.read_text(encoding="utf-8")
@@ -177,3 +228,44 @@ def test_concert_mode_omits_transpose_and_keeps_pitch(tmp_path: Path) -> None:
 
     assert "<transpose>" not in text
     assert score.parts[0].recurse().notes[0].pitch.nameWithOctave == "C4"
+
+
+def test_written_mode_adds_key_signatures_for_transposing_instruments(tmp_path: Path) -> None:
+    flute = InstrumentSpec("Flute", 73, "treble", (60, 96), (60, 96))
+    clarinet = InstrumentSpec("Clarinet", 71, "treble", (50, 94), (50, 94), transposition=2)
+    horn = InstrumentSpec("Horn", 60, "treble", (41, 77), (41, 77), transposition=7)
+    trumpet = InstrumentSpec("Trumpet", 56, "treble", (55, 82), (55, 82), transposition=2)
+    violin = InstrumentSpec("Violin I", 40, "treble", (55, 103), (55, 103))
+    result = OrchestrationResult(
+        config=OrchestrationConfig(target_ensemble="small_orchestra", concert_key="C major"),
+        instruments=(flute, clarinet, horn, trumpet, violin),
+        notes_by_instrument={
+            "Flute": [_note(60, 0.0, 1.0, instrument_spec=flute)],
+            "Clarinet": [_note(60, 0.0, 1.0, instrument_spec=clarinet)],
+            "Horn": [_note(60, 0.0, 1.0, instrument_spec=horn)],
+            "Trumpet": [_note(60, 0.0, 1.0, instrument_spec=trumpet)],
+            "Violin I": [_note(60, 0.0, 1.0, instrument_spec=violin)],
+        },
+        tempo_bpm=120.0,
+        time_signature=(4, 4),
+        key_signature="C major",
+        concert_key="C major",
+    )
+    output = export_musicxml(result, tmp_path / "written_keys.musicxml", pitch_mode="written")
+    root = _musicxml_root(output)
+
+    expected = {
+        "Flute": (0, None),
+        "Clarinet": (2, -2),
+        "Horn": (1, -7),
+        "Trumpet": (2, -2),
+        "Violin I": (0, None),
+    }
+    for part_name, (fifths, chromatic) in expected.items():
+        measure = _first_part_measure(root, part_name)
+        assert _first_key_fifths(measure) == fifths
+        assert _first_note_pitch(measure) == ("D4" if part_name in {"Clarinet", "Trumpet"} else "G4" if part_name == "Horn" else "C4")
+        if chromatic is None:
+            assert _first_transpose_chromatic(measure) is None
+        else:
+            assert _first_transpose_chromatic(measure) == chromatic

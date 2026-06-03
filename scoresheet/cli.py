@@ -38,6 +38,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="written",
         help="MusicXML pitch handling mode",
     )
+    parser.add_argument(
+        "--concert-key",
+        default=None,
+        help='Concert key for MusicXML output, e.g. "C major", "G major", or "A minor"',
+    )
     parser.add_argument("--parts", action="store_true", help="Also write individual MusicXML part files")
     parser.add_argument(
         "--validate-musescore",
@@ -69,6 +74,7 @@ def run(args: argparse.Namespace) -> int:
         config = OrchestrationConfig(
             target_ensemble=args.ensemble,
             quantization_unit=args.quantization_unit,
+            concert_key=args.concert_key,
             output_musicxml=args.format in {"musicxml", "both"},
             output_midi=args.format in {"mid", "both"},
             output_parts=args.parts,
@@ -82,7 +88,13 @@ def run(args: argparse.Namespace) -> int:
     xml_path: Path | None = None
     if args.format in {"musicxml", "both"}:
         xml_path = args.output_dir / f"{stem}_{args.ensemble}.musicxml"
-        export_musicxml(arranged, xml_path, title=f"{stem} - {args.ensemble}", pitch_mode=args.pitch_mode)
+        export_musicxml(
+            arranged,
+            xml_path,
+            title=f"{stem} - {args.ensemble}",
+            pitch_mode=args.pitch_mode,
+            concert_key=args.concert_key,
+        )
         print(xml_path)
 
         if args.validate_musescore:
@@ -104,7 +116,13 @@ def run(args: argparse.Namespace) -> int:
         print(midi_path)
     if args.parts:
         parts_dir = args.output_dir / "parts"
-        for path in export_parts_musicxml(arranged, parts_dir, title_prefix=stem, pitch_mode=args.pitch_mode):
+        for path in export_parts_musicxml(
+            arranged,
+            parts_dir,
+            title_prefix=stem,
+            pitch_mode=args.pitch_mode,
+            concert_key=args.concert_key,
+        ):
             print(path)
 
     return 0

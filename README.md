@@ -74,6 +74,7 @@ scoresheet --help
 - `--ensemble`: one supported ensemble preset. Defaults to `small_orchestra`.
 - `--format`: `musicxml`, `mid`, or `both`. Defaults to `musicxml`.
 - `--pitch-mode`: `written` or `concert`. Defaults to `written`.
+- `--concert-key`: concert key to use when the MIDI file does not contain one. Defaults to `C major` with a warning.
 - `--parts`: also export one MusicXML file per instrument part.
 - `--quantization-unit`: beat grid unit. Defaults to `0.25`.
 - `--validate-musescore`: optionally validate generated MusicXML with MuseScore Studio CLI converter mode.
@@ -96,6 +97,8 @@ scoresheet INPUT.mid -o output --format musicxml --validate-musescore --musescor
 
 The validator calls MuseScore Studio CLI converter mode to import the generated MusicXML and export a `.validated.mscz` file next to it. This is intended to catch MuseScore import problems such as `incomplete measure` / `不完整小节` before a user opens the score for editing. CI does not install MuseScore by default, so MuseScore-specific integration coverage is optional and skips when no executable is found.
 
+When `--pitch-mode written` is used, transposing instruments are exported with written pitches, written key signatures, and MusicXML transpose metadata. MIDI output remains sounding/concert pitch for auditioning.
+
 ## Supported ensembles
 
 - `string_quartet`
@@ -115,6 +118,7 @@ The validator calls MuseScore Studio CLI converter mode to import the generated 
 6. Export final parts or audio from MuseScore.
 
 If you want concert-pitch debugging output instead of transposing-instrument notation, use `--pitch-mode concert`.
+If the MIDI file has no key signature, scoresheet defaults to `C major`; pass `--concert-key "G major"` or another key to override.
 
 ## Development / tests
 

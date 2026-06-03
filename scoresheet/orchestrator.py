@@ -46,6 +46,7 @@ class OrchestrationConfig:
     target_ensemble: str = "small_orchestra"
     quantization_unit: float = 0.25
     max_voices: int = 8
+    concert_key: str | None = None
     output_musicxml: bool = True
     output_midi: bool = False
     output_parts: bool = False
@@ -57,6 +58,12 @@ class OrchestrationConfig:
 
 @dataclass(frozen=True)
 class OrchestratedNote:
+    """A note assigned by the heuristic arranger.
+
+    `pitch` is always sounding/concert pitch. Exporters decide whether to keep
+    that pitch or convert it to written pitch for MusicXML.
+    """
+
     source: ParsedNote
     pitch: int
     start_beat: float
@@ -74,6 +81,7 @@ class OrchestrationResult:
     tempo_bpm: float
     time_signature: tuple[int, int]
     key_signature: str | None
+    concert_key: str | None
     warnings: tuple[str, ...] = field(default_factory=tuple)
 
 
@@ -142,7 +150,13 @@ def orchestrate(parsed: ParsedMidi, config: OrchestrationConfig | None = None) -
     tempo_bpm = parsed.meta.tempos[0][1] if parsed.meta.tempos else 120.0
     seconds_per_beat = 60.0 / tempo_bpm
     time_signature = _first_time_signature(parsed)
-    key_signature = parsed.meta.key_signatures[0][1] if parsed.meta.key_signatures else None
+    key_signature = _resolve_concert_key(config.concert_key)
+    if key_signature is None:
+        if parsed.meta.key_signatures:
+            key_signature = _resolve_concert_key(parsed.meta.key_signatures[0][1])
+        if key_signature is None:
+            key_signature = "C major"
+            warnings.warn("No key signature found; defaulting to C major. Use --concert-key to override.", RuntimeWarning, stacklevel=2)
 
     non_drum_notes = [n for n in parsed.notes if not n.is_drum]
     if not non_drum_notes:
@@ -187,6 +201,7 @@ def orchestrate(parsed: ParsedMidi, config: OrchestrationConfig | None = None) -
         tempo_bpm=tempo_bpm,
         time_signature=time_signature,
         key_signature=key_signature,
+        concert_key=key_signature,
         warnings=tuple(sorted(set(warning_messages))),
     )
 
@@ -282,3 +297,10 @@ def _first_time_signature(parsed: ParsedMidi) -> tuple[int, int]:
         _, numerator, denominator = parsed.meta.time_signatures[0]
         return numerator, denominator
     return (4, 4)
+
+
+def _resolve_concert_key(raw_key: str | None) -> str | None:
+    if raw_key is None:
+        return None
+    normalized = raw_key.strip()
+    return normalized or None
