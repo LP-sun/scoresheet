@@ -1,5 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -23,3 +24,22 @@ scoresheet = "scoresheet.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+description = "Arrange piano MIDI files into ensemble MIDI or MusicXML scores."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "music21>=9.1",
+]
+
+[project.optional-dependencies]
+pretty = ["pretty_midi>=0.2.10"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+scoresheet = "scoresheet.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
