@@ -46,6 +46,7 @@ class OrchestrationConfig:
     target_ensemble: str = "small_orchestra"
     quantization_unit: float = 0.25
     max_voices: int = 8
+    concert_key: str | None = None
     output_musicxml: bool = True
     output_midi: bool = False
     output_parts: bool = False
@@ -57,6 +58,12 @@ class OrchestrationConfig:
 
 @dataclass(frozen=True)
 class OrchestratedNote:
+    """A note assigned by the heuristic arranger.
+
+    `pitch` is always sounding/concert pitch. Exporters decide whether to keep
+    that pitch or convert it to written pitch for MusicXML.
+    """
+
     source: ParsedNote
     pitch: int
     start_beat: float
@@ -74,6 +81,7 @@ class OrchestrationResult:
     tempo_bpm: float
     time_signature: tuple[int, int]
     key_signature: str | None
+    concert_key: str | None
     warnings: tuple[str, ...] = field(default_factory=tuple)
 
 
@@ -142,7 +150,14 @@ def orchestrate(parsed: ParsedMidi, config: OrchestrationConfig | None = None) -
     tempo_bpm = parsed.meta.tempos[0][1] if parsed.meta.tempos else 120.0
     seconds_per_beat = 60.0 / tempo_bpm
     time_signature = _first_time_signature(parsed)
-    key_signature = parsed.meta.key_signatures[0][1] if parsed.meta.key_signatures else None
+    bar_length = bar_length_from_time_signature(time_signature)
+    key_signature = _resolve_concert_key(config.concert_key)
+    if key_signature is None:
+        if parsed.meta.key_signatures:
+            key_signature = _resolve_concert_key(parsed.meta.key_signatures[0][1])
+        if key_signature is None:
+            key_signature = "C major"
+            warnings.warn("No key signature found; defaulting to C major. Use --concert-key to override.", RuntimeWarning, stacklevel=2)
 
     non_drum_notes = [n for n in parsed.notes if not n.is_drum]
     if not non_drum_notes:
@@ -160,8 +175,16 @@ def orchestrate(parsed: ParsedMidi, config: OrchestrationConfig | None = None) -
         adjusted_pitch, range_warning = fit_pitch_to_range(note.pitch, target)
         if range_warning:
             warning_messages.append(range_warning)
-        start_beat = quantize(note.start / seconds_per_beat, config.quantization_unit)
-        duration_beats = max(config.quantization_unit, quantize(note.duration / seconds_per_beat, config.quantization_unit))
+        raw_start_beat = note.start / seconds_per_beat
+        raw_end_beat = note.end / seconds_per_beat
+        start_beat = quantize(raw_start_beat, config.quantization_unit)
+        end_beat = quantize(raw_end_beat, config.quantization_unit)
+        tolerance = max(1e-6, config.quantization_unit / 8)
+        start_beat = snap_to_barline(start_beat, bar_length, tolerance)
+        end_beat = snap_to_barline(end_beat, bar_length, tolerance)
+        if end_beat <= start_beat:
+            end_beat = start_beat + config.quantization_unit
+        duration_beats = end_beat - start_beat
         result[target.name].append(
             OrchestratedNote(
                 source=note,
@@ -187,6 +210,7 @@ def orchestrate(parsed: ParsedMidi, config: OrchestrationConfig | None = None) -
         tempo_bpm=tempo_bpm,
         time_signature=time_signature,
         key_signature=key_signature,
+        concert_key=key_signature,
         warnings=tuple(sorted(set(warning_messages))),
     )
 
@@ -229,6 +253,17 @@ def quantize(value: float, unit: float) -> float:
     if unit <= 0:
         raise ValueError("quantization_unit must be positive")
     return round(value / unit) * unit
+
+
+def snap_to_barline(value: float, bar_length: float, tolerance: float) -> float:
+    if tolerance < 0:
+        raise ValueError("tolerance must be non-negative")
+    if bar_length <= 0:
+        raise ValueError("bar_length must be positive")
+    nearest = round(value / bar_length) * bar_length
+    if abs(value - nearest) <= tolerance:
+        return nearest
+    return value
 
 
 def fit_pitch_to_range(pitch: int, instrument: InstrumentSpec) -> tuple[int, str | None]:
@@ -282,3 +317,15 @@ def _first_time_signature(parsed: ParsedMidi) -> tuple[int, int]:
         _, numerator, denominator = parsed.meta.time_signatures[0]
         return numerator, denominator
     return (4, 4)
+
+
+def bar_length_from_time_signature(time_signature: tuple[int, int]) -> float:
+    numerator, denominator = time_signature
+    return numerator * 4.0 / denominator
+
+
+def _resolve_concert_key(raw_key: str | None) -> str | None:
+    if raw_key is None:
+        return None
+    normalized = raw_key.strip()
+    return normalized or None

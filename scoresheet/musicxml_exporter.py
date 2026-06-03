@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import copy
 import math
 from pathlib import Path
 from typing import Literal
 
 from music21 import clef, duration, instrument, key, metadata, midi, note, stream, tempo, meter
 
-from .orchestrator import InstrumentSpec, OrchestratedNote, OrchestrationResult
+from .orchestrator import InstrumentSpec, OrchestratedNote, OrchestrationResult, bar_length_from_time_signature
 
 
 PitchMode = Literal["written", "concert"]
@@ -18,6 +19,7 @@ def build_score(
     result: OrchestrationResult,
     title: str = "Orchestrated score",
     pitch_mode: PitchMode = "written",
+    concert_key: str | None = None,
 ) -> stream.Score:
     """Build a music21 Score from an orchestration result."""
 
@@ -27,14 +29,14 @@ def build_score(
     score.metadata.title = title
     score.insert(0, tempo.MetronomeMark(number=result.tempo_bpm))
     score.insert(0, meter.TimeSignature(f"{result.time_signature[0]}/{result.time_signature[1]}"))
-    if result.key_signature:
-        maybe_key = _key_signature(result.key_signature)
-        if maybe_key is not None:
-            score.insert(0, maybe_key)
 
-    bar_length = result.time_signature[0] * 4.0 / result.time_signature[1]
+    concert_key_obj = _resolve_concert_key(result, concert_key)
+    if concert_key_obj is not None:
+        score.insert(0, copy.deepcopy(concert_key_obj))
+
+    bar_length = bar_length_from_time_signature(result.time_signature)
     max_end = max(
-        (note.start_beat + note.duration_beats for notes in result.notes_by_instrument.values() for note in notes),
+        (n.start_beat + n.duration_beats for notes in result.notes_by_instrument.values() for n in notes),
         default=0.0,
     )
     total_length = math.ceil(max_end / bar_length) * bar_length if max_end > 0 else bar_length
@@ -43,15 +45,16 @@ def build_score(
         part = stream.Part(id=_safe_part_id(spec.name))
         part.partName = spec.name
         part.atSoundingPitch = True
-        part.insert(0, _music21_instrument(spec, pitch_mode))
+        part.insert(0, _to_music21_instrument(spec, pitch_mode))
         part.insert(0, _clef(spec.clef))
         part.insert(0, meter.TimeSignature(f"{result.time_signature[0]}/{result.time_signature[1]}"))
+        if concert_key_obj is not None:
+            part.insert(0, copy.deepcopy(concert_key_obj))
         for orch_note in result.notes_by_instrument.get(spec.name, []):
             part.insert(orch_note.start_beat, _note_from_orchestrated(orch_note))
-        _prepare_part_notation(part, total_length)
         if pitch_mode == "written":
             part = part.toWrittenPitch(inPlace=False)
-        part.makeMeasures(inPlace=True)
+        _prepare_part_notation(part, total_length)
         score.insert(0, part)
 
     return score
@@ -62,22 +65,26 @@ def export_musicxml(
     output_path: str | Path,
     title: str = "Orchestrated score",
     pitch_mode: PitchMode = "written",
+    concert_key: str | None = None,
 ) -> Path:
     """Write a full score MusicXML file and return its path."""
 
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    score = build_score(result, title=title, pitch_mode=pitch_mode)
+    score = build_score(result, title=title, pitch_mode=pitch_mode, concert_key=concert_key)
     written = score.write("musicxml", fp=str(output))
     return Path(written)
 
 
 def export_midi(result: OrchestrationResult, output_path: str | Path, title: str = "Orchestrated score") -> Path:
-    """Write an optional MIDI realization from the arranged score."""
+    """Write an optional MIDI realization from the arranged score.
+
+    MIDI stays on sounding/concert pitch because it is only a listening aid.
+    """
 
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    score = build_score(result, title=title)
+    score = build_score(result, title=title, pitch_mode="concert")
     mf = midi.translate.music21ObjectToMidiFile(score)
     mf.open(str(output), "wb")
     mf.write()
@@ -90,12 +97,13 @@ def export_parts_musicxml(
     output_dir: str | Path,
     title_prefix: str = "Part",
     pitch_mode: PitchMode = "written",
+    concert_key: str | None = None,
 ) -> list[Path]:
     """Write one MusicXML file per instrument part."""
 
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    score = build_score(result, title="Orchestrated parts", pitch_mode=pitch_mode)
+    score = build_score(result, title="Orchestrated parts", pitch_mode=pitch_mode, concert_key=concert_key)
     written: list[Path] = []
     for part in score.parts:
         part_score = stream.Score()
@@ -123,7 +131,7 @@ def _prepare_part_notation(part: stream.Part, total_length: float) -> None:
         measure.makeRests(fillGaps=True, timeRangeFromBarDuration=True, inPlace=True)
 
 
-def _music21_instrument(spec: InstrumentSpec, pitch_mode: PitchMode) -> instrument.Instrument:
+def _to_music21_instrument(spec: InstrumentSpec, pitch_mode: PitchMode) -> instrument.Instrument:
     if pitch_mode == "concert":
         inst = instrument.Instrument()
         inst.instrumentName = spec.name
@@ -139,6 +147,39 @@ def _music21_instrument(spec: InstrumentSpec, pitch_mode: PitchMode) -> instrume
     return inst
 
 
+def _resolve_concert_key(result: OrchestrationResult, concert_key: str | None) -> key.Key | None:
+    raw = concert_key or result.concert_key or result.key_signature
+    if raw is None:
+        return None
+    return _parse_key(raw)
+
+
+def _parse_key(raw_key: str) -> key.Key:
+    normalized = raw_key.strip()
+    if not normalized:
+        raise ValueError("concert key cannot be empty")
+
+    parts = normalized.split()
+    if len(parts) == 1:
+        tonic, mode = _split_legacy_key_token(parts[0])
+    else:
+        tonic = parts[0]
+        mode = parts[1].lower()
+        if mode not in {"major", "minor"}:
+            raise ValueError(f"Unsupported key mode in {raw_key!r}; expected major or minor")
+    try:
+        return key.Key(tonic, mode)
+    except Exception as exc:  # music21 raises several parse-specific exceptions.
+        raise ValueError(f"Could not parse concert key {raw_key!r}: {exc}") from exc
+
+
+def _split_legacy_key_token(token: str) -> tuple[str, str]:
+    lowered = token.lower()
+    if lowered.endswith("m") and len(token) > 1:
+        return token[:-1], "minor"
+    return token, "major"
+
+
 def _clef(name: str) -> clef.Clef:
     if name == "bass":
         return clef.BassClef()
@@ -147,13 +188,6 @@ def _clef(name: str) -> clef.Clef:
     if name == "tenor":
         return clef.TenorClef()
     return clef.TrebleClef()
-
-
-def _key_signature(key_name: str) -> key.Key | None:
-    try:
-        return key.Key(key_name)
-    except Exception:  # music21 raises several parse-specific exceptions here.
-        return None
 
 
 def _safe_part_id(name: str) -> str:
