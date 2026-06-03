@@ -336,3 +336,169 @@ def test_cli_musescore_executable_argument_is_forwarded(tmp_path: Path, monkeypa
 
     assert exit_code == 0
     assert captured["executable"] == executable
+
+
+def test_cli_native_backend_default_behavior_unchanged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
+    calls: list[tuple[str, object]] = []
+    _patch_pipeline(monkeypatch, calls)
+
+    exit_code = cli.main([str(input_path), "-o", str(tmp_path / "out")])
+
+    assert exit_code == 0
+    assert [name for name, _ in calls] == ["parse", "orchestrate", "musicxml"]
+
+
+def test_cli_musescore_backend_exports_midi_then_converts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from scoresheet.musescore_backend import MuseScoreConversionResult
+
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
+    output_dir = tmp_path / "out"
+    calls: list[tuple[str, object]] = []
+    _patch_pipeline(monkeypatch, calls)
+
+    def fake_convert(
+        input_midi: Path,
+        output_path: Path,
+        executable: Path | None = None,
+        midi_operations: Path | None = None,
+        timeout: int = 120,
+    ) -> MuseScoreConversionResult:
+        calls.append(("convert", output_path))
+        output_path.write_text("musicxml", encoding="utf-8")
+        return MuseScoreConversionResult(
+            executable=Path("mscore"),
+            input_midi=input_midi,
+            output_path=output_path,
+            returncode=0,
+            stdout="",
+            stderr="",
+            ok=True,
+            skipped=False,
+            reason=None,
+        )
+
+    monkeypatch.setattr(cli, "convert_midi_with_musescore", fake_convert)
+
+    exit_code = cli.main([str(input_path), "-o", str(output_dir), "--backend", "musescore", "--format", "musicxml"])
+
+    assert exit_code == 0
+    assert [name for name, _ in calls] == ["parse", "orchestrate", "mid", "convert"]
+    assert calls[2][1] == output_dir / "song_small_orchestra.mid"
+    assert calls[3][1] == output_dir / "song_small_orchestra.musicxml"
+
+
+def test_cli_musescore_backend_missing_musescore_returns_nonzero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from scoresheet.musescore_backend import MuseScoreConversionResult
+
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
+    calls: list[tuple[str, object]] = []
+    _patch_pipeline(monkeypatch, calls)
+
+    def fake_convert(
+        input_midi: Path,
+        output_path: Path,
+        executable: Path | None = None,
+        midi_operations: Path | None = None,
+        timeout: int = 120,
+    ) -> MuseScoreConversionResult:
+        calls.append(("convert", output_path))
+        return MuseScoreConversionResult(
+            executable=None,
+            input_midi=input_midi,
+            output_path=output_path,
+            returncode=None,
+            stdout="",
+            stderr="",
+            ok=False,
+            skipped=True,
+            reason="MuseScore executable not found",
+        )
+
+    monkeypatch.setattr(cli, "convert_midi_with_musescore", fake_convert)
+
+    exit_code = cli.main([str(input_path), "-o", str(tmp_path / "out"), "--backend", "musescore", "--format", "mscz"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "MuseScore executable not found" in captured.err
+    assert [name for name, _ in calls] == ["parse", "orchestrate", "mid", "convert"]
+
+
+def test_cli_native_backend_rejects_mscz_format(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
+
+    def fail_parse(path: Path) -> ParsedMidi:
+        pytest.fail("pipeline should not run for invalid native mscz request")
+
+    monkeypatch.setattr(cli, "parse_midi", fail_parse)
+
+    exit_code = cli.main([str(input_path), "-o", str(tmp_path / "out"), "--backend", "native", "--format", "mscz"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert "mscz requires --backend musescore or both" in captured.err
+
+
+def test_cli_musescore_arguments_are_forwarded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from scoresheet.musescore_backend import MuseScoreConversionResult
+
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
+    calls: list[tuple[str, object]] = []
+    _patch_pipeline(monkeypatch, calls)
+    executable = tmp_path / "MuseScore4.exe"
+    operations = tmp_path / "midi_import_options.xml"
+    captured: dict[str, Path | None] = {}
+
+    def fake_convert(
+        input_midi: Path,
+        output_path: Path,
+        executable: Path | None = None,
+        midi_operations: Path | None = None,
+        timeout: int = 120,
+    ) -> MuseScoreConversionResult:
+        captured["executable"] = executable
+        captured["midi_operations"] = midi_operations
+        output_path.write_bytes(b"mscz")
+        return MuseScoreConversionResult(
+            executable=executable,
+            input_midi=input_midi,
+            output_path=output_path,
+            returncode=0,
+            stdout="",
+            stderr="",
+            ok=True,
+            skipped=False,
+            reason=None,
+        )
+
+    monkeypatch.setattr(cli, "convert_midi_with_musescore", fake_convert)
+
+    exit_code = cli.main(
+        [
+            str(input_path),
+            "-o",
+            str(tmp_path / "out"),
+            "--backend",
+            "musescore",
+            "--format",
+            "mscz",
+            "--musescore-executable",
+            str(executable),
+            "--midi-operations",
+            str(operations),
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["executable"] == executable
+    assert captured["midi_operations"] == operations
