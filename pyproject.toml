@@ -18,12 +18,17 @@ dependencies = [
 
 [project.optional-dependencies]
 partitura = ["partitura"]
+description = "Arrange MIDI score sheets for supported ensembles."
+requires-python = ">=3.10"
 
 [project.scripts]
 scoresheet = "scoresheet.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
 description = "Arrange piano MIDI files into ensemble MIDI or MusicXML scores."
 readme = "README.md"
 requires-python = ">=3.10"

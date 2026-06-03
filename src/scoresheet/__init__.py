@@ -2,6 +2,9 @@
 
 __all__ = ["__version__"]
 
+"""Utilities for arranging MIDI score sheets."""
+
+__all__ = ["__version__"]
 __version__ = "0.1.0"
 """scoresheet: arrange piano MIDI files into ensemble scores."""
 
