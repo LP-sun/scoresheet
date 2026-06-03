@@ -8,7 +8,7 @@ from .orchestrator import (
     OrchestrationResult,
     orchestrate,
 )
-from .musicxml_exporter import export_musicxml, export_parts_musicxml
+from .musicxml_exporter import export_midi, export_musicxml, export_parts_musicxml
 
 __all__ = [
     "InstrumentSpec",
@@ -17,6 +17,7 @@ __all__ = [
     "OrchestrationResult",
     "ParsedMidi",
     "ParsedNote",
+    "export_midi",
     "export_musicxml",
     "export_parts_musicxml",
     "orchestrate",

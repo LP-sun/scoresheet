@@ -1,27 +1,11 @@
-[project]
-name = "scoresheet"
-version = "0.1.0"
-description = "MIDI reduction orchestration rules based on music21"
-requires-python = ">=3.11"
-dependencies = ["music21>=9.0"]
-
-[project.optional-dependencies]
-test = ["pytest>=8.0"]
-
-[tool.pytest.ini_options]
-pythonpath = ["src"]
-testpaths = ["tests"]
 [build-system]
 requires = ["hatchling>=1.21"]
 build-backend = "hatchling.build"
-requires = ["setuptools>=68", "wheel"]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
 
 [project]
 name = "scoresheet"
 version = "0.1.0"
-description = "Rule-based MIDI piano score to orchestra/ensemble MusicXML arranger."
+description = "Rule-based MIDI piano score to ensemble MusicXML/MIDI arranger."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -34,60 +18,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-  "pytest>=8.0",
-]
-dev = ["pytest>=7"]
-partitura = ["partitura>=1.4"]
-
-[project.scripts]
-scoresheet = "scoresheet.cli:main"
-description = "Convert MIDI piano sheets into arranged score files such as MIDI or MusicXML."
-readme = "README.md"
-requires-python = ">=3.10"
-dependencies = [
-    "music21",
-    "pretty_midi",
-    "mido",
-    "numpy",
-]
-
-[project.optional-dependencies]
-partitura = ["partitura"]
-description = "Arrange MIDI score sheets for supported ensembles."
-requires-python = ">=3.10"
+dev = ["pytest>=8.0"]
 
 [project.scripts]
 scoresheet = "scoresheet.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
 
 [tool.hatch.build.targets.wheel]
 packages = ["scoresheet"]
-[tool.setuptools.packages.find]
-where = ["src"]
-[tool.pytest.ini_options]
-pythonpath = ["src"]
-testpaths = ["tests"]
-description = "Arrange piano MIDI files into ensemble MIDI or MusicXML scores."
-readme = "README.md"
-requires-python = ">=3.10"
-dependencies = [
-  "music21>=9.1",
-]
-
-[project.optional-dependencies]
-pretty = ["pretty_midi>=0.2.10"]
-dev = ["pytest>=7"]
-
-[project.scripts]
-scoresheet = "scoresheet.__main__:main"
-
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src"]

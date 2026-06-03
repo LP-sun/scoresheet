@@ -2,164 +2,166 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pretty_midi
+import pytest
 
-from scoresheet.cli import main
+from scoresheet import cli
+from scoresheet.midi_parser import MidiMeta, ParsedMidi
+from scoresheet.orchestrator import OrchestrationConfig, OrchestrationResult
 
 
-def write_simple_midi(path: Path) -> None:
-    midi = pretty_midi.PrettyMIDI(initial_tempo=100)
-    piano = pretty_midi.Instrument(program=0, name="Piano")
-    piano.notes.extend(
-        [
-            pretty_midi.Note(velocity=96, pitch=72, start=0.0, end=1.0),
-            pretty_midi.Note(velocity=80, pitch=48, start=0.0, end=1.0),
-            pretty_midi.Note(velocity=64, pitch=55, start=0.0, end=1.0),
-            pretty_midi.Note(velocity=90, pitch=74, start=1.0, end=2.0),
-            pretty_midi.Note(velocity=78, pitch=43, start=1.0, end=2.0),
-        ]
+def _fake_parsed(path: Path) -> ParsedMidi:
+    return ParsedMidi(
+        path=path,
+        notes=[],
+        meta=MidiMeta(tempos=[(0.0, 120.0)], time_signatures=[(0.0, 4, 4)]),
+        length_seconds=0.0,
     )
-    midi.instruments.append(piano)
-    midi.write(str(path))
 
 
-def test_arrange_cli_uses_real_pipeline(tmp_path: Path, capsys) -> None:
-    midi_path = tmp_path / "simple.mid"
-    output_path = tmp_path / "out.musicxml"
-    write_simple_midi(midi_path)
-
-    exit_code = main(["arrange", str(midi_path), "--ensemble", "string_quartet", "--output", str(output_path)])
-
-    captured = capsys.readouterr()
-    assert exit_code == 0
-    assert str(output_path) in captured.out
-    assert output_path.exists()
-    assert output_path.stat().st_size > 100
-    assert "Violin" in output_path.read_text(encoding="utf-8")
+def _fake_result(config: OrchestrationConfig) -> OrchestrationResult:
+    return OrchestrationResult(
+        config=config,
+        instruments=(),
+        notes_by_instrument={},
+        tempo_bpm=120.0,
+        time_signature=(4, 4),
+        key_signature=None,
+    )
 
 
-def test_batch_arrange_cli_uses_real_pipeline(tmp_path: Path, capsys) -> None:
-    midi_path = tmp_path / "simple.mid"
-    out_dir = tmp_path / "arranged"
-    write_simple_midi(midi_path)
+def _patch_pipeline(monkeypatch: pytest.MonkeyPatch, calls: list[tuple[str, object]]) -> None:
+    def fake_parse(path: Path) -> ParsedMidi:
+        calls.append(("parse", path))
+        return _fake_parsed(path)
 
-    exit_code = main([
-        "batch-arrange",
-        str(tmp_path),
-        "--ensemble",
-        "wind_quintet",
-        "--format",
-        "musicxml",
-        "--out-dir",
-        str(out_dir),
-    ])
+    def fake_orchestrate(parsed: ParsedMidi, config: OrchestrationConfig) -> OrchestrationResult:
+        calls.append(("orchestrate", config))
+        return _fake_result(config)
 
-    captured = capsys.readouterr()
-    output_path = out_dir / "wind_quintet" / "simple_wind_quintet.musicxml"
-    assert exit_code == 0
-    assert "summary: success=1 failure=0" in captured.out
-    assert output_path.exists()
-    assert "Flute" in output_path.read_text(encoding="utf-8")
+    def fake_export_musicxml(result: OrchestrationResult, path: Path, title: str) -> Path:
+        calls.append(("musicxml", path))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("musicxml", encoding="utf-8")
+        return path
+
+    def fake_export_midi(result: OrchestrationResult, path: Path, title: str) -> Path:
+        calls.append(("mid", path))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"MThd")
+        return path
+
+    def fake_export_parts(result: OrchestrationResult, path: Path, title_prefix: str) -> list[Path]:
+        calls.append(("parts", path))
+        path.mkdir(parents=True, exist_ok=True)
+        part_path = path / "flute.musicxml"
+        part_path.write_text("part", encoding="utf-8")
+        return [part_path]
+
+    monkeypatch.setattr(cli, "parse_midi", fake_parse)
+    monkeypatch.setattr(cli, "orchestrate", fake_orchestrate)
+    monkeypatch.setattr(cli, "export_musicxml", fake_export_musicxml)
+    monkeypatch.setattr(cli, "export_midi", fake_export_midi)
+    monkeypatch.setattr(cli, "export_parts_musicxml", fake_export_parts)
 
 
-def test_batch_arrange_all_ensembles(tmp_path: Path) -> None:
-    midi_path = tmp_path / "simple.mid"
-    out_dir = tmp_path / "arranged"
-    write_simple_midi(midi_path)
-
-    exit_code = main(["batch-arrange", str(tmp_path), "--all-ensembles", "--format", "mid", "--out-dir", str(out_dir)])
-
-    assert exit_code == 0
-    assert (out_dir / "orchestra" / "simple_orchestra.mid").exists()
-    assert (out_dir / "string_quartet" / "simple_string_quartet.mid").exists()
-
-
-def test_cli_missing_file_returns_clear_error(capsys) -> None:
-    exit_code = main(["arrange", "does-not-exist.mid", "--output", "out.musicxml"])
+def test_cli_missing_input_returns_2(capsys: pytest.CaptureFixture[str]) -> None:
+    exit_code = cli.main(["does-not-exist.mid"])
     captured = capsys.readouterr()
 
     assert exit_code == 2
     assert "does not exist" in captured.err
-from pathlib import Path
-
-import pytest
-
-from scoresheet import cli
 
 
-def test_batch_output_path_names_structured_mid_and_musicxml(tmp_path: Path) -> None:
-    source = tmp_path / "飞鼠进行曲.mid"
+def test_cli_musicxml_branch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
+    calls: list[tuple[str, object]] = []
+    _patch_pipeline(monkeypatch, calls)
 
-    mid_path = cli.batch_output_path(source, tmp_path / "arranged", "orchestra", "mid")
-    musicxml_path = cli.batch_output_path(
-        source,
-        tmp_path / "arranged",
-        "string_quartet",
-        "musicxml",
-    )
+    exit_code = cli.main([str(input_path), "-o", str(tmp_path / "out"), "--ensemble", "small_orchestra", "--format", "musicxml"])
 
-    assert mid_path == tmp_path / "arranged" / "orchestra" / "mid" / "飞鼠进行曲.mid"
-    assert musicxml_path == (
-        tmp_path / "arranged" / "string_quartet" / "musicxml" / "飞鼠进行曲.musicxml"
-    )
+    assert exit_code == 0
+    assert [name for name, _ in calls] == ["parse", "orchestrate", "musicxml"]
 
 
-def test_batch_arrange_skips_output_dir_and_records_failures(
+def test_cli_mid_branch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
+    calls: list[tuple[str, object]] = []
+    _patch_pipeline(monkeypatch, calls)
+
+    exit_code = cli.main([str(input_path), "-o", str(tmp_path / "out"), "--format", "mid"])
+
+    assert exit_code == 0
+    assert [name for name, _ in calls] == ["parse", "orchestrate", "mid"]
+
+
+def test_cli_both_and_parts_branches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
+    calls: list[tuple[str, object]] = []
+    _patch_pipeline(monkeypatch, calls)
+
+    exit_code = cli.main([str(input_path), "-o", str(tmp_path / "out"), "--format", "both", "--parts"])
+
+    assert exit_code == 0
+    assert [name for name, _ in calls] == ["parse", "orchestrate", "musicxml", "mid", "parts"]
+
+
+def test_cli_warns_but_continues_for_non_midi_extension(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    input_path = tmp_path / "song.txt"
+    input_path.write_bytes(b"not really midi")
+    calls: list[tuple[str, object]] = []
+    _patch_pipeline(monkeypatch, calls)
+
+    exit_code = cli.main([str(input_path), "-o", str(tmp_path / "out"), "--format", "musicxml"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "warning: input file does not end with .mid/.midi" in captured.err
+    assert [name for name, _ in calls] == ["parse", "orchestrate", "musicxml"]
+
+
+def test_cli_invalid_quantization_unit_does_not_succeed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    input_dir = tmp_path / "scores"
-    out_dir = input_dir / "arranged"
-    input_dir.mkdir()
-    good = input_dir / "good.mid"
-    bad = input_dir / "bad.mid"
-    generated = out_dir / "orchestra" / "mid" / "already.mid"
-    good.write_bytes(b"good")
-    bad.write_bytes(b"bad")
-    generated.parent.mkdir(parents=True)
-    generated.write_bytes(b"generated")
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
+    calls: list[Path] = []
 
-    calls: list[tuple[Path, str, str, Path]] = []
+    def fake_parse(path: Path) -> ParsedMidi:
+        calls.append(path)
+        from scoresheet.midi_parser import ParsedNote
 
-    def fake_arrange(source: Path, ensemble: str, output_format: str, destination: Path) -> None:
-        calls.append((source, ensemble, output_format, destination))
-        if source.name == "bad.mid":
-            raise RuntimeError("cannot arrange")
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(source.read_bytes())
+        return ParsedMidi(
+            path=path,
+            notes=[ParsedNote(60, 0.0, 1.0, 1.0, 80, None, 0, "Piano", 0)],
+            meta=MidiMeta(tempos=[(0.0, 120.0)], time_signatures=[(0.0, 4, 4)]),
+            length_seconds=1.0,
+        )
 
-    monkeypatch.setattr(cli, "arrange_midi", fake_arrange)
+    monkeypatch.setattr(cli, "parse_midi", fake_parse)
 
-    report = cli.batch_arrange(
-        input_dir,
-        ensembles=("orchestra",),
-        output_format="mid",
-        out_dir=out_dir,
-    )
+    with pytest.raises(ValueError, match="quantization_unit must be positive"):
+        cli.main([str(input_path), "-o", str(tmp_path / "out"), "--quantization-unit", "0"])
 
-    assert report.succeeded == 1
-    assert report.failed == 1
-    assert report.failures[0].source == bad
-    assert report.failures[0].ensemble == "orchestra"
-    assert "RuntimeError: cannot arrange" == report.failures[0].error
-    assert [call[0].name for call in calls] == ["bad.mid", "good.mid"]
-    assert generated not in [call[0] for call in calls]
-    assert (out_dir / "orchestra" / "mid" / "good.mid").read_bytes() == b"good"
+    assert calls == [input_path]
 
 
-def test_batch_arrange_all_ensembles_writes_each_supported_ensemble(tmp_path: Path) -> None:
-    input_dir = tmp_path / "scores"
-    out_dir = tmp_path / "arranged"
-    input_dir.mkdir()
-    (input_dir / "song.mid").write_bytes(b"midi")
+def test_cli_unknown_ensemble_is_rejected_by_argparse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
 
-    report = cli.batch_arrange(
-        input_dir,
-        ensembles=cli.SUPPORTED_ENSEMBLES,
-        output_format="mid",
-        out_dir=out_dir,
-    )
+    def fail_if_pipeline_runs(path: Path) -> ParsedMidi:
+        pytest.fail(f"argparse should reject unknown ensembles before parsing {path}")
 
-    assert report.succeeded == len(cli.SUPPORTED_ENSEMBLES)
-    assert report.failed == 0
-    for ensemble in cli.SUPPORTED_ENSEMBLES:
-        assert (out_dir / ensemble / "mid" / "song.mid").read_bytes() == b"midi"
+    monkeypatch.setattr(cli, "parse_midi", fail_if_pipeline_runs)
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main([str(input_path), "--ensemble", "not_real"])
+
+    assert excinfo.value.code == 2
