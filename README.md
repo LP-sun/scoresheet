@@ -103,10 +103,12 @@ python -m pip install -e ".[dev]"
 scoresheet --help
 ```
 
+GitHub Actions runs the install, compileall, and pytest checks on push and pull_request events.
+
 ## Future TODO
 
 - Add a tested batch-arrange command that reuses `parse_midi -> orchestrate -> export` without placeholder copying.
 - Add richer role analysis and voice-leading heuristics.
 - Add percussion support.
 - Add more focused MusicXML assertions and sample fixtures.
-- Add CI once the install/import/test baseline remains stable.
+- Keep CI coverage aligned with the MVP install/import/test baseline.

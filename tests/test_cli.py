@@ -106,3 +106,72 @@ def test_cli_both_and_parts_branches(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     assert exit_code == 0
     assert [name for name, _ in calls] == ["parse", "orchestrate", "musicxml", "mid", "parts"]
+
+
+def test_cli_warns_but_continues_for_non_midi_extension(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    input_path = tmp_path / "song.txt"
+    input_path.write_bytes(b"not really midi")
+    calls: list[tuple[str, object]] = []
+    _patch_pipeline(monkeypatch, calls)
+
+    exit_code = cli.main([str(input_path), "-o", str(tmp_path / "out"), "--format", "musicxml"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "warning: input file does not end with .mid/.midi" in captured.err
+    assert [name for name, _ in calls] == ["parse", "orchestrate", "musicxml"]
+
+
+def test_cli_invalid_quantization_unit_does_not_succeed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
+    calls: list[Path] = []
+
+    def fake_parse(path: Path) -> ParsedMidi:
+        calls.append(path)
+        from scoresheet.midi_parser import ParsedNote
+
+        return ParsedMidi(
+            path=path,
+            notes=[ParsedNote(60, 0.0, 1.0, 1.0, 80, None, 0, "Piano", 0)],
+            meta=MidiMeta(tempos=[(0.0, 120.0)], time_signatures=[(0.0, 4, 4)]),
+            length_seconds=1.0,
+        )
+
+    monkeypatch.setattr(cli, "parse_midi", fake_parse)
+
+    with pytest.raises(ValueError, match="quantization_unit must be positive"):
+        cli.main([str(input_path), "-o", str(tmp_path / "out"), "--quantization-unit", "0"])
+
+    assert calls == [input_path]
+
+
+def test_cli_unknown_ensemble_is_rejected_by_argparse(tmp_path: Path) -> None:
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main([str(input_path), "--ensemble", "not_real"])
+
+    assert excinfo.value.code == 2
+
+    exit_code = cli.main([str(input_path), "-o", str(tmp_path / "out"), "--format", "mid"])
+
+    assert exit_code == 0
+    assert [name for name, _ in calls] == ["parse", "orchestrate", "mid"]
+
+
+def test_cli_both_and_parts_branches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    input_path = tmp_path / "song.mid"
+    input_path.write_bytes(b"midi")
+    calls: list[tuple[str, object]] = []
+    _patch_pipeline(monkeypatch, calls)
+
+    exit_code = cli.main([str(input_path), "-o", str(tmp_path / "out"), "--format", "both", "--parts"])
+
+    assert exit_code == 0
+    assert [name for name, _ in calls] == ["parse", "orchestrate", "musicxml", "mid", "parts"]
