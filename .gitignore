@@ -8,5 +8,13 @@ __pycache__/
 output/
 arranged/
 __pycache__/
+.pytest_cache/
+*.py[cod]
+*.egg-info/
 *.py[cod]
 .pytest_cache/
+*.egg-info/
+
+# Generated arrangement outputs
+output/
+arranged/
